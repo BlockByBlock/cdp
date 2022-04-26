@@ -1,0 +1,12 @@
+{
+  "name": "cdp",
+  "version": "0.0.1",
+  "description": "CDP",
+  "repository": "https://github.com/BlockByBlock/cdp.git",
+  "author": "blockbyblock <ybingcheng@gmail.com>",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "prettier": "^2.6.2",
+    "prettier-plugin-solidity": "^1.0.0-beta.19"
+  }
+}
