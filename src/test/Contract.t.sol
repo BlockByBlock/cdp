@@ -3,10 +3,17 @@ pragma solidity 0.8.10;
 
 import "ds-test/test.sol";
 
-contract ContractTest is DSTest {
-    function setUp() public {}
+import "../Contract.sol";
 
-    function testExample() public {
-        assertTrue(true);
+contract ContractTest is DSTest {
+    Contract a;
+    function setUp() public {
+        a = new Contract();
+    }
+
+    function testTokenName() public {
+        assertEq(a.balanceOf(address(this)), 0);
+        a.mint(address(this), 1e18);
+        assertGt(a.balanceOf(address(this)), 0);
     }
 }
