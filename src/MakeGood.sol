@@ -24,6 +24,8 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
     uint256 public treasury;
     uint256 public closingFee;
     uint256 public openingFee;
+    uint256 public debtRatio;
+    uint256 public gainRatio;
     uint256 public minimumCollateralPercentage;
 
     mapping(uint256 => uint256) public vaultCollateral;
@@ -44,15 +46,20 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
         string memory _name,
         string memory _symbol,
         string memory _baseURI,
-        IERC20 _collateral,
-        IERC20 _goodToken
+        address _collateral,
+        address _goodToken
     ) ERC721(_name, _symbol) {
         baseURI = _baseURI;
-        collateral = _collateral;
-        goodToken = _goodToken;
+        collateral = IERC20(_collateral);
+        goodToken = IERC20(_goodToken);
 
         closingFee = 50; // 0.5%
         openingFee = 0; // 0.0%
+
+        tokenPeg = 100000000; // $1
+
+        debtRatio = 2; // 1/2, pay back 50%
+        gainRatio = 1100;// /10 so 1.1
     }
 
     /**
@@ -240,5 +247,102 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
         vaultCollateral[treasury] = vaultCollateral[treasury] + _closingFee;
 
         emit PayBackToken(vaultID, amount, _closingFee);
+    }
+
+    /**
+     * @notice Get collateral percentage
+     * @param vaultID Vault ID
+     */
+    function checkCollateralPercentage(uint256 vaultID) public view returns (uint256) {
+        require(_ownerOf[vaultID] != address(0), "Vault does not exist");
+
+        if (vaultCollateral[vaultID] == 0 || vaultDebt[vaultID] == 0) {
+            return 0;
+        }
+        (uint256 collateralValueTimes100, uint256 debtValue) = calculateCollateralProperties(
+            vaultCollateral[vaultID],
+            vaultDebt[vaultID]
+        );
+
+        collateralValueTimes100 = collateralValueTimes100 * (10**10);
+
+        return collateralValueTimes100 / debtValue;
+    }
+
+    /**
+     * @notice check vault liquidation
+     * @param vaultID Vault ID
+     * @return true if vault can be liquidated
+     */
+    function checkLiquidation(uint256 vaultID) public view returns (bool) {
+        require(_ownerOf[vaultID] != address(0), "Vault does not exist");
+
+        if (vaultCollateral[vaultID] == 0 || vaultDebt[vaultID] == 0) {
+            return false;
+        }
+
+        (uint256 collateralValueTimes100, uint256 debtValue) = calculateCollateralProperties(
+            vaultCollateral[vaultID],
+            vaultDebt[vaultID]
+        );
+
+        collateralValueTimes100 = collateralValueTimes100 * (10**10);
+
+        uint256 collateralPercentage = collateralValueTimes100 / debtValue;
+
+        if (collateralPercentage < minimumCollateralPercentage) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * @notice check cost
+     * @param vaultID Vault ID
+     * @return half debt
+     */
+    function checkCost(uint256 vaultID) public view returns (uint256) {
+        if (vaultCollateral[vaultID] == 0 || vaultDebt[vaultID] == 0 || !checkLiquidation(vaultID)) {
+            return 0;
+        }
+
+        // collateralValueTimes100, debtValue
+        (, uint256 debtValue) = calculateCollateralProperties(vaultCollateral[vaultID], vaultDebt[vaultID]);
+
+        if (debtValue == 0) {
+            return 0;
+        }
+
+        // uint256 collateralPercentage = collateralValueTimes100 / debtValue;
+
+        debtValue = debtValue / (10**8);
+        uint256 halfDebt = debtValue / debtRatio;
+
+        return (halfDebt);
+    }
+
+    /**
+     * @notice check extract
+     * @param vaultID Vault ID
+     * @return extractable
+     */
+    function checkExtract(uint256 vaultID) public view returns (uint256) {
+        if (vaultCollateral[vaultID] == 0 || !checkLiquidation(vaultID)) {
+            return 0;
+        }
+
+        // collateralValueTimes100, debtValue
+        (, uint256 debtValue) = calculateCollateralProperties(
+            vaultCollateral[vaultID],
+            vaultDebt[vaultID]
+        );
+
+        uint256 halfDebt = debtValue / debtRatio;
+
+        if (halfDebt == 0) {
+            return 0;
+        }
+        return (halfDebt * gainRatio) / 1000 / getEthPriceSource() / 10000000000;
     }
 }
