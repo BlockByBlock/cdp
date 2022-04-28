@@ -28,6 +28,8 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
     uint256 public gainRatio;
     uint256 public minimumCollateralPercentage;
 
+    address public stabilityPool;
+
     mapping(uint256 => uint256) public vaultCollateral;
     mapping(uint256 => uint256) public vaultDebt;
 
@@ -37,6 +39,7 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
     event WithdrawCollateral(uint256 vaultID, uint256 amount);
     event BorrowToken(uint256 vaultID, uint256 amount);
     event PayBackToken(uint256 vaultID, uint256 amount, uint256 closingFee);
+    event LiquidateVault(uint256 vaultID, address owner, address buyer, uint256 debtRepaid, uint256 collateralLiquidated, uint256 closingFee);
 
     IERC20 public immutable collateral;
     IERC20 public immutable goodToken;
@@ -323,7 +326,7 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice check extract
+     * @notice check extract for rewards e.g. matic
      * @param vaultID Vault ID
      * @return extractable
      */
@@ -344,5 +347,49 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
             return 0;
         }
         return (halfDebt * gainRatio) / 1000 / getEthPriceSource() / 10000000000;
+    }
+
+    /**
+     * @notice liquidate vault
+     * @param vaultID Vault ID
+     */
+    function liquidateVault(uint256 vaultID) external {
+        require(_ownerOf[vaultID] != address(0), "Vault does not exist");
+        require(stabilityPool==address(0) || msg.sender ==  stabilityPool, "liquidation is disabled for public");
+
+        (uint256 collateralValueTimes100, uint256 debtValue) = calculateCollateralProperties(vaultCollateral[vaultID], vaultDebt[vaultID]);
+        
+        collateralValueTimes100 = collateralValueTimes100 * (10 ** 10);
+
+        uint256 collateralPercentage = collateralValueTimes100 / debtValue;
+
+        require(collateralPercentage < minimumCollateralPercentage, "Vault is not below minimum collateral percentage");
+
+        debtValue = debtValue / (10 ** 8);
+
+        uint256 halfDebt = debtValue / debtRatio; 
+
+        require(goodToken.balanceOf(msg.sender) >= halfDebt, "Token balance too low to pay off outstanding debt");
+
+        goodToken.transferFrom(msg.sender, address(this), halfDebt);
+
+        // uint256 maticExtract = checkExtract(vaultID);
+
+        vaultDebt[vaultID] = vaultDebt[vaultID] - halfDebt; // we paid back half of its debt.
+
+        uint256 _closingFee = (halfDebt * closingFee * getTokenPriceSource()) / (getEthPriceSource() * 10000) / 1000000000;
+
+        vaultCollateral[vaultID]=vaultCollateral[vaultID] - _closingFee;
+        vaultCollateral[treasury]=vaultCollateral[treasury] + _closingFee;
+
+        // deduct the amount from the vault's collateral
+        // vaultCollateral[vaultID] = vaultCollateral[vaultID].sub(maticExtract);
+        vaultCollateral[vaultID] = vaultCollateral[vaultID] - 0;
+
+        // let liquidator take the collateral
+        // maticDebt[msg.sender] = maticDebt[msg.sender] + maticExtract;
+
+        // emit LiquidateVault(vaultID, ownerOf(vaultID), msg.sender, halfDebt, maticExtract, _closingFee);
+        emit LiquidateVault(vaultID, ownerOf(vaultID), msg.sender, halfDebt, 0, _closingFee);
     }
 }
