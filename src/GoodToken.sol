@@ -39,11 +39,10 @@ contract GoodToken is ERC20, Ownable {
 
     /**
      * @dev Burn tokens
-     * @param from The origin of the tokens
      * @param amount The amount of tokens to burn
      **/
-    function burn(address from, uint256 amount) external {
+    function burn(uint256 amount) external {
         require(amount <= balanceOf[msg.sender], "MIM: not enough");
-        _burn(from, amount);
+        _burn(msg.sender, amount);
     }
 }
