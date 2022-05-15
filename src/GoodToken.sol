@@ -2,14 +2,14 @@
 pragma solidity 0.8.10;
 
 import "solmate/tokens/ERC20.sol";
-import "openzeppelin-contracts/contracts/access/Ownable.sol";
+import "solmate/auth/Owned.sol";
 
 /**
  * @title GoodToken
  * @notice Basic ERC20 implementation
  * @author BlockByBlock
  **/
-contract GoodToken is ERC20, Ownable {
+contract GoodToken is ERC20, Owned {
     struct Minting {
         uint256 time;
         uint256 amount;
@@ -19,7 +19,7 @@ contract GoodToken is ERC20, Ownable {
     uint256 private constant MINTING_PERIOD = 24 hours;
     uint256 private constant MINTING_INCREASE = 15000;
     uint256 private constant MINTING_PRECISION = 1e5;
-    constructor() ERC20("Good Token", "GUDGOOD", 18) {}
+    constructor() ERC20("Good Token", "GUDGOOD", 18) Owned(msg.sender) {}
 
     /**
      * @dev Mint tokens
