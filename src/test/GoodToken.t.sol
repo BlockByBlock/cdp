@@ -22,7 +22,7 @@ contract GoodTokenTest is DSTest {
     }
 
     function testTokenMintAsNotOwner() public {
-        vm.expectRevert('Ownable: caller is not the owner');
+        vm.expectRevert('UNAUTHORIZED');
         vm.prank(address(2));
         goodToken.mint(address(2), 1e18);
         assertEq(goodToken.balanceOf(address(2)), 0);
