@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.10;
 
-import "openzeppelin-contracts/contracts/access/Ownable.sol";
-import "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
-import "openzeppelin-contracts/contracts/utils/Strings.sol";
-import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-
 import "solmate/tokens/ERC721.sol";
+import "solmate/auth/Owned.sol";
+import "solmate/utils/ReentrancyGuard.sol";
+import "solmate/utils/SafeTransferLib.sol";
 
 import "./PriceConsumerV3.sol";
 
@@ -15,8 +13,8 @@ import "./PriceConsumerV3.sol";
  * @notice Make GoodToken
  * @author BlockByBlock
  **/
-contract MakeGood is ERC721, Ownable, ReentrancyGuard {
-    using Strings for uint256;
+contract MakeGood is ERC721, Owned, ReentrancyGuard {
+    using SafeTransferLib for ERC20;
 
     string public baseURI;
     uint256 public vaultCount;
@@ -41,8 +39,8 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
     event PayBackToken(uint256 vaultID, uint256 amount, uint256 closingFee);
     event LiquidateVault(uint256 vaultID, address owner, address buyer, uint256 debtRepaid, uint256 collateralLiquidated, uint256 closingFee);
 
-    IERC20 public immutable collateral;
-    IERC20 public immutable goodToken;
+    ERC20 public immutable collateral;
+    ERC20 public immutable goodToken;
     PriceConsumerV3 public ethOracleFeed;
 
     constructor(
@@ -51,10 +49,10 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
         string memory _baseURI,
         address _collateral,
         address _goodToken
-    ) ERC721(_name, _symbol) {
+    ) ERC721(_name, _symbol) Owned(msg.sender) {
         baseURI = _baseURI;
-        collateral = IERC20(_collateral);
-        goodToken = IERC20(_goodToken);
+        collateral = ERC20(_collateral);
+        goodToken = ERC20(_goodToken);
 
         closingFee = 50; // 0.5%
         openingFee = 0; // 0.0%
@@ -82,12 +80,38 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
     }
 
     /**
+     * @notice utility to convert uint256 to string for vaultID
+     * @param value uint256
+     */
+    function toString(uint256 value) internal pure returns (string memory) {
+        // From Openzeppelin's implementation - MIT licence
+        // https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Strings.sol#L15-L35
+
+        if (value == 0) {
+            return "0";
+        }
+        uint256 temp = value;
+        uint256 digits;
+        while (temp != 0) {
+            digits++;
+            temp /= 10;
+        }
+        bytes memory buffer = new bytes(digits);
+        while (value != 0) {
+            digits -= 1;
+            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
+            value /= 10;
+        }
+        return string(buffer);
+    }
+
+    /**
      * @notice NFT URI
      * @param vaultID ID of Vault
      */
     function tokenURI(uint256 vaultID) public view virtual override returns (string memory) {
         require(_ownerOf[vaultID] != address(0), "ERC721Metadata: URI query for nonexistent token");
-        return bytes(baseURI).length > 0 ? string(abi.encodePacked(baseURI, vaultID.toString())) : "";
+        return bytes(baseURI).length > 0 ? string(abi.encodePacked(baseURI, toString(vaultID))) : "";
     }
 
     function getTokenPriceSource() public view returns (uint256) {
@@ -152,7 +176,7 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
 
         if (vaultCollateral[vaultID] != 0) {
             // withdraw leftover collateral
-            collateral.transfer(_ownerOf[vaultID], vaultCollateral[vaultID]);
+            collateral.safeTransfer(_ownerOf[vaultID], vaultCollateral[vaultID]);
         }
 
         _burn(vaultID);
@@ -198,7 +222,7 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
         }
 
         vaultCollateral[vaultID] = newCollateralAmt;
-        collateral.transfer(msg.sender, amount);
+        collateral.safeTransfer(msg.sender, amount);
 
         emit WithdrawCollateral(vaultID, amount);
     }
@@ -224,7 +248,7 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
         vaultDebt[vaultID] = newDebt;
 
         // goodToken
-        goodToken.transfer(msg.sender, amount);
+        goodToken.safeTransfer(msg.sender, amount);
 
         emit BorrowToken(vaultID, amount);
     }
@@ -243,7 +267,7 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
             1000000000;
 
         //mai
-        goodToken.transferFrom(msg.sender, address(this), amount);
+        goodToken.safeTransferFrom(msg.sender, address(this), amount);
 
         vaultDebt[vaultID] = vaultDebt[vaultID] - amount;
         vaultCollateral[vaultID] = vaultCollateral[vaultID] - _closingFee;
@@ -371,7 +395,7 @@ contract MakeGood is ERC721, Ownable, ReentrancyGuard {
 
         require(goodToken.balanceOf(msg.sender) >= halfDebt, "Token balance too low to pay off outstanding debt");
 
-        goodToken.transferFrom(msg.sender, address(this), halfDebt);
+        goodToken.safeTransferFrom(msg.sender, address(this), halfDebt);
 
         // uint256 maticExtract = checkExtract(vaultID);
 
